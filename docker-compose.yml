@@ -1,0 +1,89 @@
+version: '3.8'
+
+services:
+  db-guatemala:
+    image: postgres:15-alpine
+    container_name: cine-db-guatemala
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cine_gt
+      POSTGRES_USER: cine_admin
+      POSTGRES_PASSWORD: cine_pass_2024
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-gt-data:/var/lib/postgresql/data
+    networks:
+      - cine-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cine_admin -d cine_gt"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  db-elsalvador:
+    image: postgres:15-alpine
+    container_name: cine-db-elsalvador
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cine_sv
+      POSTGRES_USER: cine_admin
+      POSTGRES_PASSWORD: cine_pass_2024
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-sv-data:/var/lib/postgresql/data
+    networks:
+      - cine-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cine_admin -d cine_sv"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  datawarehouse:
+    image: postgres:15-alpine
+    container_name: cine-datawarehouse
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cine_dw
+      POSTGRES_USER: dw_admin
+      POSTGRES_PASSWORD: dw_pass_2024
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres-dw-data:/var/lib/postgresql/data
+    networks:
+      - cine-network
+    depends_on:
+      db-guatemala:
+        condition: service_healthy
+      db-elsalvador:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dw_admin -d cine_dw"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  superset:
+    image: apache/superset:latest
+    container_name: cine-superset
+    restart: unless-stopped
+    environment:
+      SUPERSET_SECRET_KEY: 'cine_secret_2024'
+    ports:
+      - "8088:8088"
+    networks:
+      - cine-network
+    depends_on:
+      - datawarehouse
+
+volumes:
+  postgres-gt-data:
+  postgres-sv-data:
+  postgres-dw-data:
+
+networks:
+  cine-network:
+    driver: bridge
