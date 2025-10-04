@@ -1,0 +1,500 @@
+# Sistema de Cines Distribuido - Laboratorio BD
+
+Sistema de bases de datos distribuidas con Data Warehouse, microservicios y dashboards analíticos con IA para gestión de cines en Guatemala y El Salvador.
+
+---
+
+## Requisitos del Sistema
+
+- **SO:** Linux (Ubuntu/Kubuntu)
+- **RAM:** 8GB mínimo (16GB recomendado)
+- **Disco:** 20GB libres
+- **Software previo:**
+  - Python 3.8+
+  - Git
+
+---
+
+## Instalación desde Cero
+
+### 1. Instalar Docker
+
+```bash
+# Actualizar repositorios
+sudo apt update
+
+# Instalar dependencias
+sudo apt install -y curl ca-certificates gnupg lsb-release
+
+# Agregar clave GPG de Docker
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+
+# Agregar repositorio Docker
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# Instalar Docker
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+
+# Agregar usuario al grupo docker
+sudo usermod -aG docker $USER
+
+# Aplicar cambios (o cerrar sesión y volver a entrar)
+newgrp docker
+
+# Verificar instalación
+docker --version
+docker compose version
+```
+
+### 2. Clonar/Crear Proyecto
+
+```bash
+# Crear estructura del proyecto
+mkdir -p ~/cine-distribuido
+cd ~/cine-distribuido
+
+# Crear directorios necesarios
+mkdir -p databases/{guatemala,elsalvador}
+mkdir -p datawarehouse/scripts
+mkdir -p microservice/src
+mkdir -p dashboards
+mkdir -p docs
+```
+
+### 3. Configurar Entorno Virtual Python
+
+```bash
+# Crear entorno virtual
+python3 -m venv venv
+
+# Activar entorno virtual
+source venv/bin/activate
+
+# Instalar dependencias Python
+pip install faker psycopg2-binary streamlit plotly prophet scikit-learn pandas
+```
+
+---
+
+## Configuración de Bases de Datos
+
+### 1. Crear docker-compose.yml
+
+Copiar el archivo `docker-compose.yml` a la raíz del proyecto con la configuración de:
+- Base de datos Guatemala (puerto 5432)
+- Base de datos El Salvador (puerto 5433)
+- Data Warehouse (puerto 5434)
+- Superset (puerto 8088)
+
+### 2. Iniciar Contenedores
+
+```bash
+# Levantar todos los servicios
+docker compose up -d
+
+# Verificar que estén corriendo
+docker compose ps
+
+# Deberías ver:
+# - cine-db-guatemala (healthy)
+# - cine-db-elsalvador (healthy)
+# - cine-datawarehouse (healthy)
+# - cine-superset (running)
+```
+
+### 3. Crear Schemas de Bases de Datos
+
+**Guatemala:**
+```bash
+# Crear schema
+docker exec -i cine-db-guatemala psql -U cine_admin -d cine_gt < databases/guatemala/01_schema.sql
+
+# Crear sucursales y salas
+docker exec -i cine-db-guatemala psql -U cine_admin -d cine_gt < databases/guatemala/02_sucursales_salas.sql
+
+# Verificar tablas
+docker exec -it cine-db-guatemala psql -U cine_admin -d cine_gt -c "\dt"
+```
+
+**El Salvador:**
+```bash
+# Crear schema
+docker exec -i cine-db-elsalvador psql -U cine_admin -d cine_sv < databases/elsalvador/01_schema.sql
+
+# Crear sucursales y salas
+docker exec -i cine-db-elsalvador psql -U cine_admin -d cine_sv < databases/elsalvador/02_sucursales_salas.sql
+
+# Verificar tablas
+docker exec -it cine-db-elsalvador psql -U cine_admin -d cine_sv -c "\dt"
+```
+
+---
+
+## Generación de Datos Masivos
+
+### 1. Ejecutar Generador
+
+```bash
+# Asegurarse de estar en el entorno virtual
+source venv/bin/activate
+
+# Ejecutar generador (tarda ~1 minuto)
+python generar_datos_final.py
+```
+
+Esto genera aproximadamente:
+- 160 películas totales
+- 7,000 clientes
+- 107,000 funciones
+- 3.8 millones de ventas
+
+### 2. Cargar Datos a las Bases de Datos
+
+**Guatemala (tarda ~10 minutos):**
+```bash
+docker exec -i cine-db-guatemala psql -U cine_admin -d cine_gt < databases/gt/03_peliculas.sql
+docker exec -i cine-db-guatemala psql -U cine_admin -d cine_gt < databases/gt/04_clientes.sql
+docker exec -i cine-db-guatemala psql -U cine_admin -d cine_gt < databases/gt/05_funciones.sql
+docker exec -i cine-db-guatemala psql -U cine_admin -d cine_gt < databases/gt/06_ventas.sql
+```
+
+**El Salvador (tarda ~8 minutos):**
+```bash
+docker exec -i cine-db-elsalvador psql -U cine_admin -d cine_sv < databases/sv/03_peliculas.sql
+docker exec -i cine-db-elsalvador psql -U cine_admin -d cine_sv < databases/sv/04_clientes.sql
+docker exec -i cine-db-elsalvador psql -U cine_admin -d cine_sv < databases/sv/05_funciones.sql
+docker exec -i cine-db-elsalvador psql -U cine_admin -d cine_sv < databases/sv/06_ventas.sql
+```
+
+### 3. Verificar Carga de Datos
+
+```bash
+# Guatemala
+docker exec -it cine-db-guatemala psql -U cine_admin -d cine_gt -c "
+SELECT 
+    'peliculas' as tabla, COUNT(*) FROM peliculas
+UNION ALL SELECT 'clientes', COUNT(*) FROM clientes
+UNION ALL SELECT 'funciones', COUNT(*) FROM funciones
+UNION ALL SELECT 'ventas', COUNT(*) FROM ventas;
+"
+
+# El Salvador
+docker exec -it cine-db-elsalvador psql -U cine_admin -d cine_sv -c "
+SELECT 
+    'peliculas' as tabla, COUNT(*) FROM peliculas
+UNION ALL SELECT 'clientes', COUNT(*) FROM clientes
+UNION ALL SELECT 'funciones', COUNT(*) FROM funciones
+UNION ALL SELECT 'ventas', COUNT(*) FROM ventas;
+"
+```
+
+---
+
+## Configuración del Data Warehouse
+
+### 1. Crear Schema Dimensional
+
+```bash
+docker exec -i cine-datawarehouse psql -U dw_admin -d cine_dw < datawarehouse/scripts/01_schema_dw.sql
+
+# Verificar
+docker exec -it cine-datawarehouse psql -U dw_admin -d cine_dw -c "\dt"
+```
+
+### 2. Ejecutar ETL (tarda ~2 minutos)
+
+```bash
+source venv/bin/activate
+python datawarehouse/scripts/etl_cargar_dw.py
+```
+
+Esto consolida los datos de GT y SV en el Data Warehouse (~259,000 registros agregados).
+
+### 3. Verificar Data Warehouse
+
+```bash
+docker exec -it cine-datawarehouse psql -U dw_admin -d cine_dw -c "
+SELECT 
+    p.nombre as pais,
+    SUM(cantidad_boletos) as boletos,
+    SUM(ingreso_total) as ingresos
+FROM fact_ventas fv
+JOIN dim_pais p ON fv.pais_id = p.pais_id
+GROUP BY p.nombre;
+"
+```
+
+---
+
+## Microservicio API REST
+
+### 1. Instalar Dependencias
+
+```bash
+cd microservice
+npm install
+```
+
+### 2. Configurar Variables de Entorno
+
+Verificar que existe el archivo `.env` con:
+```env
+PORT=3000
+DB_DW_HOST=localhost
+DB_DW_PORT=5434
+DB_DW_NAME=cine_dw
+DB_DW_USER=dw_admin
+DB_DW_PASSWORD=dw_pass_2024
+```
+
+### 3. Iniciar Microservicio
+
+```bash
+npm run dev
+```
+
+El servidor inicia en `http://localhost:3000`
+
+### 4. Probar Endpoints
+
+```bash
+# Health check
+curl http://localhost:3000/health
+
+# Ventas por país
+curl http://localhost:3000/api/ventas/por-pais
+
+# Top películas
+curl http://localhost:3000/api/peliculas/top/10
+
+# Ventas por mes
+curl http://localhost:3000/api/ventas/por-mes
+```
+
+---
+
+## Dashboards con IA (Streamlit)
+
+### 1. Iniciar Dashboards
+
+```bash
+cd ~/cine-distribuido/dashboards
+source ../venv/bin/activate
+streamlit run app.py
+```
+
+Se abre automáticamente en `http://localhost:8501`
+
+### 2. Dashboards Disponibles
+
+1. **Resumen General:** Métricas principales y top películas
+2. **Predicción de Ventas (Prophet):** Forecasting con IA de Facebook
+3. **Clustering de Películas (K-Means):** Segmentación inteligente
+4. **Detección de Anomalías (Isolation Forest):** Identificación de comportamientos inusuales
+
+---
+
+## Comandos Útiles
+
+### Docker
+
+```bash
+# Ver logs de un servicio
+docker compose logs -f [servicio]
+
+# Reiniciar un servicio
+docker compose restart [servicio]
+
+# Detener todos los servicios
+docker compose down
+
+# Detener y eliminar volúmenes (⚠️ BORRA DATOS)
+docker compose down -v
+
+# Ver estado de contenedores
+docker compose ps
+
+# Ver uso de recursos
+docker stats
+```
+
+### PostgreSQL
+
+```bash
+# Conectar a base de datos
+docker exec -it cine-db-guatemala psql -U cine_admin -d cine_gt
+
+# Backup de base de datos
+docker exec cine-db-guatemala pg_dump -U cine_admin cine_gt > backup_gt.sql
+
+# Restaurar backup
+docker exec -i cine-db-guatemala psql -U cine_admin cine_gt < backup_gt.sql
+
+# Ver tamaño de tablas
+docker exec -it cine-db-guatemala psql -U cine_admin -d cine_gt -c "
+SELECT 
+    tablename,
+    pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) AS size
+FROM pg_tables
+WHERE schemaname = 'public'
+ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
+"
+```
+
+### Python
+
+```bash
+# Activar entorno virtual
+source venv/bin/activate
+
+# Desactivar entorno virtual
+deactivate
+
+# Ver paquetes instalados
+pip list
+
+# Actualizar paquete
+pip install --upgrade [paquete]
+```
+
+---
+
+## Puertos Utilizados
+
+| Servicio | Puerto | URL |
+|----------|--------|-----|
+| PostgreSQL Guatemala | 5432 | localhost:5432 |
+| PostgreSQL El Salvador | 5433 | localhost:5433 |
+| Data Warehouse | 5434 | localhost:5434 |
+| Microservicio API | 3000 | http://localhost:3000 |
+| Dashboards Streamlit | 8501 | http://localhost:8501 |
+| Superset | 8088 | http://localhost:8088 |
+
+---
+
+## Troubleshooting
+
+### Error: "permission denied" en Docker
+
+```bash
+# Solución
+newgrp docker
+# O cerrar sesión y volver a entrar
+```
+
+### Error: Puerto ya en uso
+
+```bash
+# Ver qué proceso usa el puerto
+sudo lsof -i :5432
+
+# Matar proceso
+sudo kill -9 [PID]
+```
+
+### Contenedor no inicia
+
+```bash
+# Ver logs detallados
+docker compose logs [servicio]
+
+# Recrear contenedor
+docker compose up -d --force-recreate [servicio]
+```
+
+### Base de datos no responde
+
+```bash
+# Verificar health check
+docker compose ps
+
+# Reiniciar servicio
+docker compose restart [servicio]
+
+# Verificar conectividad
+docker exec -it [contenedor] pg_isready -U [usuario]
+```
+
+---
+
+## Estructura del Proyecto
+
+```
+cine-distribuido/
+├── docker-compose.yml
+├── databases/
+│   ├── guatemala/
+│   │   ├── 01_schema.sql
+│   │   ├── 02_sucursales_salas.sql
+│   │   └── 03-06_datos.sql
+│   └── elsalvador/
+│       └── (igual que guatemala)
+├── datawarehouse/
+│   └── scripts/
+│       ├── 01_schema_dw.sql
+│       └── etl_cargar_dw.py
+├── microservice/
+│   ├── src/
+│   │   └── server.js
+│   ├── package.json
+│   └── .env
+├── dashboards/
+│   ├── app.py
+│   └── config.py
+├── generar_datos_final.py
+├── venv/
+└── docs/
+    └── Propuesta_Tecnica.md
+```
+
+---
+
+## Datos del Sistema
+
+### Volumen de Datos
+
+- **Total registros:** 3.9 millones
+- **Guatemala:** 2.1 millones de ventas
+- **El Salvador:** 1.7 millones de ventas
+- **Data Warehouse:** 259,000 registros agregados
+- **Período histórico:** 3 años
+
+### Tecnologías Utilizadas
+
+- **Bases de Datos:** PostgreSQL 15
+- **Orquestación:** Docker Compose
+- **Backend:** Node.js + Express
+- **ETL:** Python + psycopg2
+- **Dashboards:** Streamlit
+- **IA/ML:** Prophet, scikit-learn
+- **Visualización:** Plotly
+
+---
+
+## Contacto y Soporte
+
+Para problemas o dudas:
+1. Revisar sección de Troubleshooting
+2. Ver logs: `docker compose logs -f`
+3. Verificar documentación oficial de cada tecnología
+
+---
+
+# Activar entorno virtual
+source venv/bin/activate
+
+cd ~/Escritorio/10mo\ Semestre/Seminario\ de\ Tecnologias\ de\ Informacion/Microservicios/cine-distribuido
+source venv/bin/activate
+
+## Nota sobre Datos
+Los archivos SQL con millones de registros no están incluidos en el repositorio.
+Para generar los datos: `python generar_datos_final.py`
+
+
+## Licencia
+
+Proyecto académico - Universidad (Seminario de Tecnologías de Información)

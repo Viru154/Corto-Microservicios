@@ -1,0 +1,18 @@
+# Archivos SQL grandes (datos generados)
+databases/gt/06_ventas.sql
+databases/sv/06_ventas.sql
+databases/gt/05_funciones.sql
+databases/sv/05_funciones.sql
+
+# Archivos temporales Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.env
+
+# Node modules
+node_modules/
+
+# Logs
+*.log
