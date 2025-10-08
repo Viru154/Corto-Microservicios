@@ -495,6 +495,32 @@ Los archivos SQL con millones de registros no están incluidos en el repositorio
 Para generar los datos: `python generar_datos_final.py`
 
 
+--
+## Levantar Proyecto 
+
+# 1. Activar entorno virtual
+cd ~/cine-distribuido
+source venv/bin/activate
+
+# 2. Levantar contenedores Docker
+docker compose up -d
+
+# 3. Iniciar microservicio API (en una terminal)
+cd microservice
+npm run dev
+
+# 4. Iniciar dashboards (en otra terminal)
+cd dashboards
+source ../venv/bin/activate
+streamlit run app.py
+Accesos:
+
+API: http://localhost:3000
+Dashboards: http://localhost:8501
+PostgreSQL GT: localhost:5432
+PostgreSQL SV: localhost:5433
+Data Warehouse: localhost:5434
+
 ## Licencia
 
 Proyecto académico - Universidad (Seminario de Tecnologías de Información)
